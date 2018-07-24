@@ -4,7 +4,6 @@ import strutils
 import osproc
 import os
 import times
-import threadpool
 from system import quit
 
 type
@@ -77,6 +76,7 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
     stop_s = toSeconds(stop)
     p: Process
     rc: int
+    is_paused: bool
 
   if stdout != "" and stdout == stderr:
     # stdout and stderr will use the same stream
@@ -93,14 +93,31 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
       else:
         let wait = secondsToNextEvent(start_s, stop_s)
         log(&"waiting {wait}s to start")
-        sleep(wait)
+        sleep(wait * 1000)
     else:
       # started
+      if peekExitCode(p) == -1:
+        # not yet finished
+        if inStartWindow(start_s, stop_s):
+          if is_paused:
+            # resume it
+            discard
+          else:
+            # keep running
+            # XXX it would be nice to use a less polling-like method
+            log("running")
+            sleep(1000)
+        else:
+          # pause it
+          # XXX
+          sleep(1000)
+          discard
+      else:
+        # finished
+        rc = waitForExit(p)
+        log(&"finished ({rc})")
+        break
 
-      # rc = waitForExit(p)
-      # log(&"finished ({rc})")
-      # break
-      sleep(1)
   quit(rc)
 
 proc parseTime(x:string):Time =
@@ -132,6 +149,7 @@ proc main() =
     started_cmd = false
     verbose = false
     stop_time, start_time: Time
+    got_times = 0
     stdout, stderr = ""
     subargs: seq[string]
 
@@ -148,8 +166,12 @@ proc main() =
           subargs.add(&"--{key}")
       else:
         case key
-          of "start-time": start_time = parseTime(val)
-          of "stop-time": stop_time = parseTime(val)
+          of "start-time":
+            start_time = parseTime(val)
+            got_times = got_times + 1
+          of "stop-time":
+            stop_time = parseTime(val)
+            got_times = got_times + 1
           of "stdout": stdout = val
           of "stderr": stderr = val
           of "": started_cmd = true
@@ -173,6 +195,9 @@ proc main() =
           quit(1)
     of cmdEnd: assert(false)
   
+  if got_times == 1:
+    echo &"Error: provide both --start-time and --stop-time or neither"
+    quit(1)
   if verbose:
     echo "subargs ", subargs
     echo "start-time ", start_time

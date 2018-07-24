@@ -104,7 +104,7 @@ EOF
 TIMES=$(getStartStop)
 STOP=$(echo $TIMES | cut -d' ' -f1)
 START=$(echo $TIMES | cut -d' ' -f2)
-echo "running long test..."
+echo "running long test... START=${START} STOP=${STOP}"
 [ -e _testoutput ] && rm _testoutput
 "$SCRIPT" --start-time="$START" --stop-time="$STOP" --stdout=_testoutput ./samplechild.sh 70 0
 cat _testoutput
