@@ -1,4 +1,4 @@
-This repository is to compare how a few languages can solve a problem I'm trying to solve.  See (USAGE.md)[USAGE.md] for what the program should do.
+This repository is to compare how a few languages can solve a problem I'm trying to solve.  See [USAGE.md](USAGE.md) for what the program should do.
 
 You can test your implementation with:
 
