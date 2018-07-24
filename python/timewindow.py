@@ -3,7 +3,6 @@ from __future__ import print_function
 import subprocess
 import click
 import signal
-import os
 import sys
 import time
 from datetime import datetime
@@ -78,17 +77,20 @@ def secondsToNextEvent(start, stop):
 
 def executeInTimewindow(args, start, stop, stdout, stderr):
     p = None
-    if stdout:
-        stdout = open(stdout, 'a+')
-    if stderr:
-        stderr = open(stderr, 'a+')
+    if stdout and stdout == stderr:
+        stdout = stderr = open(stdout, 'a+')
+    else:
+        if stdout:
+            stdout = open(stdout, 'a+')
+        if stderr:
+            stderr = open(stderr, 'a+')
     is_paused = False
     while True:
         if p is None:
             # not started yet
             if inStartWindow(start, stop):
                 log('starting')
-                p = subprocess.Popen(args, env=os.environ, stdout=stdout, stderr=stderr, stdin=subprocess.PIPE)
+                p = subprocess.Popen(args, stdout=stdout, stderr=stderr, stdin=subprocess.PIPE)
                 # p.stdin.close()
             else:
                 wait = secondsToNextEvent(start, stop)
