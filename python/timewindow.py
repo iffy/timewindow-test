@@ -77,6 +77,18 @@ def secondsToNextEvent(start, stop):
 
 def executeInTimewindow(args, start, stop, stdout, stderr):
     p = None
+    def pass_signal_to_child(signum, frame):
+        if p:
+            p.send_signal(signum)
+        time.sleep(1)
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt()
+        else:
+            raise Exception('Terminated')
+        # return signal.signal(signal.SIGTERM, signal.SIG_DFL)(signum, frame)
+    signal.signal(signal.SIGTERM, pass_signal_to_child)
+    signal.signal(signal.SIGINT, pass_signal_to_child)
+
     if stdout and stdout == stderr:
         stdout = stderr = open(stdout, 'a+')
     else:

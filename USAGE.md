@@ -1,6 +1,6 @@
 Usage:
 
-    timewindow [opts] COMMAND [ARG...]
+    timewindow [opts] [--] COMMAND [ARG...]
 
 Opts:
 
@@ -25,7 +25,7 @@ This program exits with the same return code that `COMMAND` returns as soon as `
 
 Environment variables provided to this command are provided to `COMMAND`.
 
-When `--stop-time` is reached, the subprocess will be sent `SIGSTOP` (19).  If the process is stopped and `--start-time` is reached, the process will be sent `SIGCONT` (18).
+When `--stop-time` is reached, the subprocess will be sent `SIGSTOP` (19) to pause it.  If the process is paused and `--start-time` is reached, the process will be sent `SIGCONT` (18) to resume it.
 
 `SIGTERM`, `SIGINT` and `SIGKILL` should be passed on to the child process.
 

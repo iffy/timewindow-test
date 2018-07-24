@@ -4,6 +4,7 @@ RUNTIME=$1
 EXITCODE=${2:-0}
 
 # for testing
+echo "samplechild args $@"
 echo "samplechild start"
 echo "samplechild pid $$"
 echo "samplechild FOO=${FOO}"
