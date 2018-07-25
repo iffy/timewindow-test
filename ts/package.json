@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "compile": "tsc && chmod u+x timewindow.js",
+    "test": "cd .. && ./test_impl.sh ts/timewindow.js"
+  },
+  "dependencies": {
+    "typescript": "^2.9.2"
+  },
+  "devDependencies": {
+    "@types/node": "^10.5.3"
+  }
+}
