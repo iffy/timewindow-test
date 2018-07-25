@@ -85,7 +85,10 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
 
   if stdout != "" and stdout == stderr:
     # stdout and stderr will use the same stream
-    discard
+    if not existsFile(stdout):
+      writeFile(stdout, "")
+    o_stdout = openFileStream(stdout, fmAppend)
+    o_stderr = o_stdout
   else:
     # stdout and stderr will use different streams
     if stdout != "":
@@ -94,6 +97,7 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
       o_stdout = openFileStream(stdout, fmAppend)
     else:
       o_stdout = newFileStream(system.stdout)
+    
     if stderr != "":
       if not existsFile(stderr):
         writeFile(stderr, "")
