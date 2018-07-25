@@ -4,6 +4,7 @@ import strutils
 import osproc
 import os
 import times
+import streams
 from system import quit
 
 type
@@ -57,7 +58,7 @@ proc inStartWindow(start:int, stop:int):bool =
   if start == stop:
     return true
   let n = nowSeconds()
-  log(&"now: {n} start: {start} stop: {stop}")
+  # log(&"now: {n} start: {start} stop: {stop}")
   if start > stop:
     # ---|   |--- run-time spans midnight
     if n >= start:
@@ -77,10 +78,28 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
     p: Process
     rc: int
     is_paused: bool
+    line = ""
+    p_stdout, p_stderr: Stream
+    o_stdout: FileStream
+    o_stderr: FileStream
 
   if stdout != "" and stdout == stderr:
     # stdout and stderr will use the same stream
     discard
+  else:
+    # stdout and stderr will use different streams
+    if stdout != "":
+      if not existsFile(stdout):
+        writeFile(stdout, "")
+      o_stdout = openFileStream(stdout, fmAppend)
+    else:
+      o_stdout = newFileStream(system.stdout)
+    if stderr != "":
+      if not existsFile(stderr):
+        writeFile(stderr, "")
+      o_stderr = openFileStream(stderr, fmAppend)
+    else:
+      o_stderr = newFileStream(system.stderr)
 
   log(&"now: {utc(now())}")
   
@@ -90,6 +109,8 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
       if inStartWindow(start_s, stop_s):
         log("starting")
         p = startProcess(command=args[0], args=args[1..^1], options={poUsePath})
+        p_stdout = outputStream(p)
+        p_stderr = errorStream(p)
       else:
         let wait = secondsToNextEvent(start_s, stop_s)
         log(&"waiting {wait}s to start")
@@ -101,19 +122,38 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
         if inStartWindow(start_s, stop_s):
           if is_paused:
             # resume it
-            discard
+            log("resuming")
+            resume(p)
+            is_paused = false
           else:
             # keep running
+            # log("running")
+            # XXX I feel like the p_stderr buffer could get filled up, no?
+            if readLine(p_stdout, line):
+              writeLine(o_stdout, line)
+              flush(o_stdout)
+            elif readLine(p_stderr, line):
+              writeLine(o_stderr, line)
+              flush(o_stderr)
+            else:
+              sleep(1000)
+
+            # echo "line", line
             # XXX it would be nice to use a less polling-like method
-            log("running")
-            sleep(1000)
+            # sleep(1000)
         else:
           # pause it
-          # XXX
-          sleep(1000)
-          discard
+          let wait = secondsToNextEvent(start_s, stop_s)
+          log(&"pausing for {wait}s")
+          suspend(p)
+          is_paused = true
+          sleep(wait * 1000)
       else:
         # finished
+        while readLine(p_stdout, line):
+          writeLine(o_stdout, line)
+        while readLine(p_stderr, line):
+          writeLine(o_stderr, line)
         rc = waitForExit(p)
         log(&"finished ({rc})")
         break
