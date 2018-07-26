@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/google/shlex"
-	flag "github.com/spf13/pflag"
+	//flag "github.com/spf13/pflag"
+	"flag"
 	"os"
 	"os/exec"
+	"os/signal"
 	"syscall"
 	"time"
 )
@@ -26,35 +27,26 @@ func Usage() {
 	flag.PrintDefaults()
 }
 
-func extractCommand() ([]string, error) {
-	for i, v := range os.Args {
-		if v == "--" {
-			if len(os.Args[i:]) < 2 {
-				return []string{}, fmt.Errorf("Command must follow \"--\" not %+v", os.Args[i:])
-			}
-			runme := os.Args[i+1:]
-			os.Args = os.Args[:i]
-			flag.Parse()
-			return runme, nil
-		}
-	}
-	flag.Parse()
-	c, err := shlex.Split(flag.Args()[0])
-	if err != nil {
-		return []string{}, fmt.Errorf("could not split %s", flag.Args()[0])
-	}
-	return c, nil
+func proxySignals(cmd *exec.Cmd) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
+	go func() {
+		sig := <-sigs
+		fmt.Println()
+		fmt.Printf("Proxy signal %v to child.", sig)
+		cmd.Process.Signal(sig)
+	}()
 }
 
 func main() {
 	flag.Usage = Usage
-	runme, err := extractCommand()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	flag.Parse()
+	runme := flag.Args()
+	fmt.Printf("runme is %s\n", runme)
 
 	var cmd *exec.Cmd
+
 	switch len(runme) {
 	case 0:
 		fmt.Println("Try --help")
@@ -65,39 +57,45 @@ func main() {
 		cmd = exec.Command(runme[0], runme[1:]...)
 	}
 
-	switch {
-	case *stdoutfilename != "":
-		fh, err := os.OpenFile(*stdoutfilename, os.O_APPEND, 0644)
+	if *stdoutfilename != "" {
+		fh, err := os.OpenFile(*stdoutfilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Printf("ERROR with file \"%s\": %s", *stdoutfilename, err)
 			return
 		}
-		os.Stdout = fh
+		cmd.Stdout = fh
 		defer fh.Close()
-	case *stderrfilename != "":
-		fh, err := os.OpenFile(*stderrfilename, os.O_APPEND, 0644)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		os.Stdout = fh
-		defer fh.Close()
-	case (*starttime == *stoptime):
+	} else {
 		cmd.Stdout = os.Stdout
+	}
+	if *stderrfilename != "" {
+		fh, err := os.OpenFile(*stderrfilename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			fmt.Printf("ERROR with file \"%s\": %s", *stderrfilename, err)
+			return
+		}
+		cmd.Stderr = fh
+		defer fh.Close()
+	} else {
 		cmd.Stderr = os.Stderr
+	}
+	if *starttime == *stoptime {
 		err := cmd.Run()
+		proxySignals(cmd)
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 				os.Exit(status.ExitStatus())
 			}
 		}
 		return
-	case *starttime == "":
+	}
+	if *starttime == "" {
 		fmt.Println("Not running start-time is empty")
-		return
-	case *stoptime == "":
+		os.Exit(1)
+	}
+	if *stoptime == "" {
 		fmt.Println("Not running stop-time is empty")
-		return
+		os.Exit(1)
 	}
 
 	hm, err := time.Parse("15:04", *starttime)
@@ -133,6 +131,7 @@ func main() {
 				} else {
 					fmt.Println("Start command")
 					cmd.Start()
+					proxySignals(cmd)
 					done = make(chan error)
 					go func() { done <- cmd.Wait() }()
 				}
