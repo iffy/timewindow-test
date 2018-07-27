@@ -46,8 +46,8 @@ func (cmd *runner) start() {
 				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 					os.Exit(status.ExitStatus())
 				} else {
-					os.Exit(0)
 					fmt.Printf("ERROR: failed to get WaitStatus: %s\n", err)
+					os.Exit(0)
 				}
 			} else {
 				os.Exit(0)
@@ -135,11 +135,12 @@ func main() {
 		fmt.Println("Could not parse stop-time: %s", err)
 	}
 
+	var midnightsec = int32(24 * 60 * 60)
+
 	for {
 		now := time.Now().In(time.UTC)
 		start := time.Date(now.Year(), now.Month(), now.Day(), hm.Hour(), hm.Minute(), now.Second(), 0, time.UTC)
 		stop := time.Date(now.Year(), now.Month(), now.Day(), hm2.Hour(), hm2.Minute(), now.Second(), 0, time.UTC)
-		midnightsec := int32(24 * 60 * 60)
 		nowsec := secondsFromMidnight(now)
 		stopsec := secondsFromMidnight(stop)
 		startsec := secondsFromMidnight(start)
