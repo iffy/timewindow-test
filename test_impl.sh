@@ -63,20 +63,22 @@ grep "samplechild FOO=howdydo" _testoutput || addFailure "should have passed FOO
 grep "samplechild args 0 0 --extra --args" _testoutput || addFailure "should pass along args"
 
 # pass SIGINT
-"$SCRIPT" --stdout=_testoutput ./samplechild.sh 3 &
+[ -e _signal ] && rm _signal
+"$SCRIPT" ./samplechild.sh 3 &
 P=$!
 sleep 1
 kill -INT "$P"
 wait "$P"
-grep "samplechild got SIGINT" _testoutput || addFailure "should have passed SIGINT to child"
+grep "samplechild got SIGINT" _signal || addFailure "should have passed SIGINT to child"
 
 # pass SIGTERM
-"$SCRIPT" --stdout=_testoutput ./samplechild.sh 3 &
+[ -e _signal ] && rm _signal
+"$SCRIPT" ./samplechild.sh 3 &
 P=$!
 sleep 1
 kill -TERM "$P"
 wait "$P"
-grep "samplechild got SIGTERM" _testoutput || addFailure "should have passed SIGTERM to child"
+grep "samplechild got SIGTERM" _signal || addFailure "should have passed SIGTERM to child"
 
 # should fail if only --start-time or --stop-time are given
 "$SCRIPT" --start-time=05:00 ./samplechild.sh 0 0

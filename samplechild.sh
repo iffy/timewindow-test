@@ -11,9 +11,8 @@ echo "samplechild FOO=${FOO}"
 echo "samplechild stdout"
 echo "samplechild stderr" >&2
 
-
-trap 'echo "samplechild got SIGINT"; exit -1' SIGINT
-trap 'echo "samplechild got SIGTERM"; exit -2' SIGTERM
+trap 'echo "samplechild got SIGINT" > _signal; exit -1' SIGINT
+trap 'echo "samplechild got SIGTERM" > _signal; exit -2' SIGTERM
 
 START=$(date +%s)
 i=0
