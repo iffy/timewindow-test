@@ -1,9 +1,8 @@
 package main
 
 import (
-	"fmt"
-	//flag "github.com/spf13/pflag"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -27,16 +26,49 @@ func Usage() {
 	flag.PrintDefaults()
 }
 
-func proxySignals(cmd *exec.Cmd) {
+type runner struct {
+	*exec.Cmd
+}
+
+func (cmd *runner) start() {
+
+	// start command
+	if cmd.Process != nil {
+		fmt.Println("This process was already started but didn't finish yet.")
+		cmd.Process.Signal(syscall.SIGCONT)
+	} else {
+		fmt.Println("Start command")
+		proxySignals(cmd)
+		cmd.Start()
+		go func() {
+			err := cmd.Wait()
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					os.Exit(status.ExitStatus())
+				} else {
+					fmt.Printf("ERROR: failed to get WaitStatus: %s\n", err)
+				}
+			} else {
+				os.Exit(0)
+			}
+		}()
+	}
+
+}
+
+func proxySignals(cmd *runner) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
 	go func() {
 		sig := <-sigs
-		fmt.Println()
 		fmt.Printf("Proxy signal %v to child.", sig)
 		cmd.Process.Signal(sig)
 	}()
+}
+
+func secondsFromMidnight(now time.Time) int {
+	return now.Hour()*60*60 + now.Minute()*60 + now.Second()
 }
 
 func main() {
@@ -45,16 +77,16 @@ func main() {
 	runme := flag.Args()
 	fmt.Printf("runme is %s\n", runme)
 
-	var cmd *exec.Cmd
+	var cmd = new(runner)
 
 	switch len(runme) {
 	case 0:
 		fmt.Println("Try --help")
 		return
 	case 1:
-		cmd = exec.Command(runme[0])
+		cmd.Cmd = exec.Command(runme[0])
 	default:
-		cmd = exec.Command(runme[0], runme[1:]...)
+		cmd.Cmd = exec.Command(runme[0], runme[1:]...)
 	}
 
 	if *stdoutfilename != "" {
@@ -80,14 +112,9 @@ func main() {
 		cmd.Stderr = os.Stderr
 	}
 	if *starttime == *stoptime {
-		err := cmd.Run()
 		proxySignals(cmd)
-		if exiterr, ok := err.(*exec.ExitError); ok {
-			if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-				os.Exit(status.ExitStatus())
-			}
-		}
-		return
+		cmd.start()
+		select {} // TODO or not TODO that is the question.
 	}
 	if *starttime == "" {
 		fmt.Println("Not running start-time is empty")
@@ -110,62 +137,31 @@ func main() {
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), hm.Hour(), hm.Minute(), now.Second(), 0, time.UTC)
 	stop := time.Date(now.Year(), now.Month(), now.Day(), hm2.Hour(), hm2.Minute(), now.Second(), 0, time.UTC)
-
-	var done chan error
-	for {
-		if stop.UnixNano() < start.UnixNano() {
-			fmt.Println("Spans midnight")
-			stop = stop.Add(time.Hour * 24)
-		}
-		if now.UnixNano() >= start.UnixNano() {
-			if now.UnixNano() > stop.UnixNano() {
-				fmt.Println("Time has passed already, rescheduling.")
-				start = start.Add(time.Hour * 24)
-				stop = stop.Add(time.Hour * 24)
-				now = time.Now()
+	nowsec := secondsFromMidnight(now)
+	stopsec := secondsFromMidnight(stop)
+	startsec := secondsFromMidnight(start)
+	fmt.Println(nowsec)
+	fmt.Println(startsec)
+	fmt.Println(stopsec)
+		if nowsec < startsec {
+			if nowsec > stopsec || endsec > startsec {
+				// wait to start
+				w := time.Second * (startsec - nowsec)
+				fmt.Printf("Starting in %v\n", w)
+				time.Sleep(w)
 			} else {
-				// start command
-				if cmd.Process != nil {
-					fmt.Println("This process was already started but didn't finish yet.")
-					cmd.Process.Signal(syscall.SIGCONT)
-				} else {
-					fmt.Println("Start command")
-					cmd.Start()
-					proxySignals(cmd)
-					done = make(chan error)
-					go func() { done <- cmd.Wait() }()
-				}
-				runfor := stop.Sub(now)
-				fmt.Printf("running for %s\n", runfor)
-				timeout := time.After(runfor)
-				// schedule kill for later
-				select {
-				case <-timeout:
-					fmt.Println("SIGSTOP")
-					cmd.Process.Signal(syscall.SIGSTOP)
-					start = start.Add(time.Hour * 24)
-					stop = stop.Add(time.Hour * 24)
-					now = time.Now()
-				case err := <-done:
-					if exiterr, ok := err.(*exec.ExitError); ok {
-						if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-							os.Exit(status.ExitStatus())
-						} else {
-							fmt.Printf("ERROR: failed to get WaitStatus: %s\n", err)
-						}
-					} else {
-						os.Exit(0)
-					}
-				}
+				cmd.start()
+				r := time.Second * (stopsec - nowsec)
+				fmt.Printf("Will stop in %v\n", r)
+				time.Sleep(r)
+				cmd.Cmd.Process.Signal(syscall.SIGSTOP)
 			}
 		} else {
-			// wait to start
-			// now < start
-			sleepfor := start.Sub(now)
-			fmt.Printf("Start in %s\n", sleepfor)
-			time.Sleep(sleepfor)
-			now = time.Now()
-		}
+			if nowsec < stopsec || endsec < startsec {
+				cmd.start()
+				var r time.Duration
+				if endsec < startsec {
+					r = time.Seconds
+				r := time.Second * (sto
 
-	}
 }
