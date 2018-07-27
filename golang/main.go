@@ -144,7 +144,7 @@ func main() {
 		nowsec := secondsFromMidnight(now)
 		stopsec := secondsFromMidnight(stop)
 		startsec := secondsFromMidnight(start)
-		fmt.Printf("Start: %v Stop: %v Now: %v\n", start, stop, now)
+		fmt.Printf("Start: %v\nStop: %v\nNow: %v\n", start, stop, now)
 		if nowsec < startsec {
 			if nowsec >= stopsec || stopsec > startsec {
 				// wait to start
@@ -164,16 +164,19 @@ func main() {
 				cmd.start()
 				var r time.Duration
 				if stopsec < startsec {
-					fmt.Printf("Running till midnight %v\n", r)
 					r = time.Second * time.Duration(midnightsec-nowsec)
+					fmt.Printf("Running till midnight %v\n", r)
+
+					time.Sleep(r)
 				} else {
-					fmt.Printf("Running till stop time %v\n", r)
 					r = time.Second * time.Duration(stopsec-nowsec)
+					fmt.Printf("Running till stop time %v\n", r)
+					time.Sleep(r)
+					cmd.Cmd.Process.Signal(syscall.SIGSTOP)
 				}
-				time.Sleep(r)
 			} else {
 				w := time.Second * time.Duration(midnightsec-stopsec)
-				fmt.Printf("Waiting till midnightsec in the stop window %v\n", w)
+				fmt.Printf("Waiting till midnight in the stop window %v\n", w)
 				time.Sleep(w)
 			}
 
