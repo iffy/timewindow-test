@@ -1,8 +1,7 @@
 ## Compile
 
 ```
-go get github.com/spf13/pflag
-go get github.com/google/shlex
+To compile you don't need any deps but the stdlib:
 
-go build
+cd golang; go build
 ```
