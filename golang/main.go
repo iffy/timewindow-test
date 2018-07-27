@@ -4,9 +4,12 @@ import (
 	"fmt"
 	//flag "github.com/spf13/pflag"
 	"flag"
+	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -33,17 +36,87 @@ func proxySignals(cmd *exec.Cmd) {
 
 	go func() {
 		sig := <-sigs
-		fmt.Println()
-		fmt.Printf("Proxy signal %v to child.", sig)
+		log.Println()
+		log.Printf("Proxy signal %v to child.", sig)
 		cmd.Process.Signal(sig)
 	}()
 }
 
+func hhmm2Seconds(x string) int {
+	parts := strings.Split(x, ":")
+	h, err := strconv.Atoi(parts[0])
+	if err != nil {
+		log.Fatal(err)
+	}
+	m, err := strconv.Atoi(parts[1])
+	if err != nil {
+		log.Fatal(err)
+	}
+	return h * 60 * 60 + m * 60
+}
+
+func nowSeconds() int {
+	now := time.Now().UTC()
+	return now.Hour() * 60 * 60 + now.Minute() * 60 + now.Second()
+}
+
+func inStartWindow(start int, stop int) bool {
+	// if (start == nil && stop == nil || start == stop) {
+	// 	return true
+	// }
+	now := nowSeconds()
+	if (start > stop) {
+	    // ---|   |---  run-time spans midnight
+	    if (now >= start) {
+	      // ---|   |-X-
+	      return true
+	    } else if (now < stop) {
+	      // -X-|   |---
+	      return true
+	    } else {
+	      // ---| X |---
+	      return false
+	    }
+	} else {
+	    return start <= now && now < stop
+	}
+}
+
+func secondsToNextEvent(start int, stop int) time.Duration {
+	// if (start == nil && stop == nil) {
+	// 	return 0
+	// }
+	return time.Duration(func() int {
+		now := nowSeconds()
+		if (now < start) {
+			if (now < stop) {
+				return stop - now
+			} else {
+				return start - now
+			}
+		} else if (now < stop) {
+			return stop - now
+		} else {
+			SECONDS_IN_DAY := 24 * 60 * 60
+			if (start < stop) {
+				return SECONDS_IN_DAY - now + start
+			} else {
+				return SECONDS_IN_DAY - now + stop
+			}
+		}
+	}()) * time.Second
+}
+
+func tick() {
+
+}
+
 func main() {
+	logger := log.New(os.Stderr, "[timewindow] ", log.LstdFlags)
 	flag.Usage = Usage
 	flag.Parse()
 	runme := flag.Args()
-	fmt.Printf("runme is %s\n", runme)
+	logger.Printf("runme is %s\n", runme)
 
 	var cmd *exec.Cmd
 
@@ -98,74 +171,58 @@ func main() {
 		os.Exit(1)
 	}
 
-	hm, err := time.Parse("15:04", *starttime)
-	if err != nil {
-		fmt.Println("Could not parse start-time: %s", err)
-	}
-	hm2, err := time.Parse("15:04", *stoptime)
-	if err != nil {
-		fmt.Println("Could not parse stop-time: %s", err)
-	}
+	logger.Println("Current UTC time", time.Now().UTC())
 
-	now := time.Now()
-	start := time.Date(now.Year(), now.Month(), now.Day(), hm.Hour(), hm.Minute(), now.Second(), 0, time.UTC)
-	stop := time.Date(now.Year(), now.Month(), now.Day(), hm2.Hour(), hm2.Minute(), now.Second(), 0, time.UTC)
+	start := hhmm2Seconds(*starttime)
+	stop := hhmm2Seconds(*stoptime)
 
-	var done chan error
+	done := make(chan error)
+	var pause <-chan time.Time
+	var resume <-chan time.Time
+
+	start_after := 0 * time.Second
+	if ! inStartWindow(start, stop) {
+		start_after = secondsToNextEvent(start, stop)
+		logger.Println("waiting to start", start_after)
+	}
+	do_start := time.After(start_after)
+
 	for {
-		if stop.UnixNano() < start.UnixNano() {
-			fmt.Println("Spans midnight")
-			stop = stop.Add(time.Hour * 24)
-		}
-		if now.UnixNano() >= start.UnixNano() {
-			if now.UnixNano() > stop.UnixNano() {
-				fmt.Println("Time has passed already, rescheduling.")
-				start = start.Add(time.Hour * 24)
-				stop = stop.Add(time.Hour * 24)
-				now = time.Now()
-			} else {
-				// start command
-				if cmd.Process != nil {
-					fmt.Println("This process was already started but didn't finish yet.")
-					cmd.Process.Signal(syscall.SIGCONT)
-				} else {
-					fmt.Println("Start command")
-					cmd.Start()
-					proxySignals(cmd)
-					done = make(chan error)
-					go func() { done <- cmd.Wait() }()
-				}
-				runfor := stop.Sub(now)
-				fmt.Printf("running for %s\n", runfor)
-				timeout := time.After(runfor)
-				// schedule kill for later
-				select {
-				case <-timeout:
-					fmt.Println("SIGSTOP")
-					cmd.Process.Signal(syscall.SIGSTOP)
-					start = start.Add(time.Hour * 24)
-					stop = stop.Add(time.Hour * 24)
-					now = time.Now()
-				case err := <-done:
-					if exiterr, ok := err.(*exec.ExitError); ok {
-						if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-							os.Exit(status.ExitStatus())
-						} else {
-							fmt.Printf("ERROR: failed to get WaitStatus: %s\n", err)
-						}
-					} else {
-						os.Exit(0)
-					}
-				}
-			}
-		} else {
-			// wait to start
-			// now < start
-			sleepfor := start.Sub(now)
-			fmt.Printf("Start in %s\n", sleepfor)
-			time.Sleep(sleepfor)
-			now = time.Now()
-		}
+		select {
+		case <-do_start:
+			logger.Println("Start command")
+ 			cmd.Start()
+ 			proxySignals(cmd)
+ 			go func() { done <- cmd.Wait() }()
+ 			
+ 			time_to_pause := secondsToNextEvent(start, stop)
+ 			logger.Println("Will pause after", time_to_pause)
+ 			pause = time.After(time_to_pause)
+		case <-pause:
+			logger.Println("Pausing command")
+			cmd.Process.Signal(syscall.SIGSTOP)
 
+			time_to_resume := secondsToNextEvent(start, stop)
+			logger.Println("Will resume after", time_to_resume)
+			resume = time.After(time_to_resume)
+		case <-resume:
+			logger.Println("Resuming command")
+			cmd.Process.Signal(syscall.SIGCONT)
+
+			time_to_pause := secondsToNextEvent(start, stop)
+ 			logger.Println("Will pause after", time_to_pause)
+ 			pause = time.After(time_to_pause)
+		case err := <-done:
+			logger.Println("Command done")
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					os.Exit(status.ExitStatus())
+				} else {
+					logger.Printf("ERROR: failed to get WaitStatus: %s\n", err)
+				}
+			} else {
+				os.Exit(0)
+			}
+		}
 	}
 }
