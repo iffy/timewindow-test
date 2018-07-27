@@ -67,8 +67,8 @@ func proxySignals(cmd *runner) {
 	}()
 }
 
-func secondsFromMidnight(now time.Time) int {
-	return now.Hour()*60*60 + now.Minute()*60 + now.Second()
+func secondsFromMidnight(now time.Time) int32 {
+	return int32(now.Hour()*60*60 + now.Minute()*60 + now.Second())
 }
 
 func main() {
@@ -134,34 +134,47 @@ func main() {
 		fmt.Println("Could not parse stop-time: %s", err)
 	}
 
-	now := time.Now()
+	now := time.Now().In(time.UTC)
 	start := time.Date(now.Year(), now.Month(), now.Day(), hm.Hour(), hm.Minute(), now.Second(), 0, time.UTC)
 	stop := time.Date(now.Year(), now.Month(), now.Day(), hm2.Hour(), hm2.Minute(), now.Second(), 0, time.UTC)
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, now.Second(), 0, time.UTC)
+	midnightsec := secondsFromMidnight(midnight)
 	nowsec := secondsFromMidnight(now)
 	stopsec := secondsFromMidnight(stop)
 	startsec := secondsFromMidnight(start)
-	fmt.Println(nowsec)
-	fmt.Println(startsec)
-	fmt.Println(stopsec)
-		if nowsec < startsec {
-			if nowsec > stopsec || endsec > startsec {
-				// wait to start
-				w := time.Second * (startsec - nowsec)
-				fmt.Printf("Starting in %v\n", w)
-				time.Sleep(w)
-			} else {
-				cmd.start()
-				r := time.Second * (stopsec - nowsec)
-				fmt.Printf("Will stop in %v\n", r)
-				time.Sleep(r)
-				cmd.Cmd.Process.Signal(syscall.SIGSTOP)
-			}
+	fmt.Printf("Start: %v Stop: %v Now: %v\n", start, stop, now)
+	if nowsec < startsec {
+		if nowsec > stopsec || stopsec > startsec {
+			// wait to start
+			w := time.Second * time.Duration(startsec-nowsec)
+			fmt.Printf("Starting in %v\n", w)
+			time.Sleep(w)
 		} else {
-			if nowsec < stopsec || endsec < startsec {
-				cmd.start()
-				var r time.Duration
-				if endsec < startsec {
-					r = time.Seconds
-				r := time.Second * (sto
+			cmd.start()
+			r := time.Second * time.Duration(stopsec-nowsec)
+			fmt.Printf("Will stop in %v\n", r)
+			time.Sleep(r)
+			cmd.Cmd.Process.Signal(syscall.SIGSTOP)
+		}
+	} else {
+		if nowsec < stopsec || stopsec < startsec {
+			// start
+			cmd.start()
+			var r time.Duration
+			if stopsec < startsec {
+				fmt.Printf("Running till midnightseci %v\n", r)
+				r = time.Second * time.Duration(midnightsec-nowsec)
+			} else {
+				fmt.Printf("Running till stop time %v\n", r)
+				r = time.Second * time.Duration(stopsec-nowsec)
+			}
+			time.Sleep(r)
+		} else {
+			w := time.Second * time.Duration(midnightsec-stopsec)
+			fmt.Printf("Waiting till midnightsec in the stop window %v\n", w)
+			time.Sleep(w)
+		}
+
+	}
 
 }

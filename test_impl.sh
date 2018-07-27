@@ -1,4 +1,6 @@
 #!/bin/bash
+set -x
+
 
 SCRIPT=${1}
 if [ -z "$SCRIPT" ]; then

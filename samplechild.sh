@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 RUNTIME=$1
 EXITCODE=${2:-0}
