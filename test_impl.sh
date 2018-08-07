@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 SCRIPT=${1}
 if [ -z "$SCRIPT" ]; then
     echo "Error: Usage $0 PROGRAM"
