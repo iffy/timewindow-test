@@ -5,10 +5,11 @@ import osproc
 import os
 import times
 import streams
+import posix
 from system import quit
 
 type
-  Time = tuple[hour:HourRange, min:MinuteRange]
+  Time = tuple[hour:HourRange, min:MinuteRange, seconds:SecondRange]
 
 proc log(a: varargs[string]) =
   let ts = now()
@@ -19,11 +20,11 @@ proc log(a: varargs[string]) =
 
 proc toSeconds(a:Time): int =
   ## Convert a time to seconds since midnight
-  return (a.hour * 60 * 60) + (a.min * 60)
+  return (a.hour * 60 * 60) + (a.min * 60) + (a.seconds)
 
 proc nowSeconds(): int =
   let n = utc(now())
-  let nowtime:Time = (hour:n.hour.HourRange, min:n.minute.MinuteRange)
+  let nowtime:Time = (hour:n.hour.HourRange, min:n.minute.MinuteRange, seconds:n.second.SecondRange)
   return toSeconds(nowtime)
 
 const SECONDS_IN_DAY = 24 * 60 * 60
@@ -71,6 +72,15 @@ proc inStartWindow(start:int, stop:int):bool =
     #    |---|    run-time fits in a single day
     return start <= n and n < stop
 
+# proc watchForKill(p:Process) =
+  
+#   onSignal(posix.SIGINT):
+#     log("SIGINT received")
+#     p.kill
+    
+#   onSignal(posix.SIGTERM):
+#     log("SIGTERM received")
+
 proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string, stderr:string) =
   var
     start_s = toSeconds(start)
@@ -106,7 +116,7 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
       o_stderr = newFileStream(system.stderr)
 
   log(&"now: {utc(now())}")
-  
+
   while true:
     if p == nil:
       # not started yet
@@ -140,11 +150,9 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
               writeLine(o_stderr, line)
               flush(o_stderr)
             else:
+              # XXX it would be nice to use a less polling-like method
               sleep(1000)
-
-            # echo "line", line
-            # XXX it would be nice to use a less polling-like method
-            # sleep(1000)
+            
         else:
           # pause it
           let wait = secondsToNextEvent(start_s, stop_s)
@@ -166,9 +174,9 @@ proc executeInTimewindow(args:seq[string], start:Time, stop:Time, stdout:string,
 
 proc parseTime(x:string):Time =
   if x == "":
-    return (hour:0.HourRange, min:0.MinuteRange)
+    return (hour:0.HourRange, min:0.MinuteRange, seconds:0.SecondRange)
   let parts = split(x, ":")
-  return (hour:parseInt(parts[0]).HourRange, min:parseInt(parts[1]).MinuteRange)
+  return (hour:parseInt(parts[0]).HourRange, min:parseInt(parts[1]).MinuteRange, seconds:0.SecondRange)
 
 proc writeHelp() =
   echo """
